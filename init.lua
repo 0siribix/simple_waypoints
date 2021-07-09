@@ -88,20 +88,22 @@ local join = minetest.register_on_joinplayer(function(player)
 end)
 
 -------------- NODE DEFINITIONS -----------------
-local palette = {"blue", "green", "orange", "pink", "purple", "red", "white", "yellow"}
+local palette = {"blank", "blue", "green", "orange", "pink", "purple", "red", "white", "yellow"}
 
 -- BEACON DEFINITION
 for _, color in ipairs(palette) do
-	minetest.register_node("simple_waypoints:"..color.."_beacon", {
-		visual_scale = 1.0,
-		drawtype = "plantlike",
-		tiles = {"beacon_"..color..".png"},
-		paramtype = "light",
-		walkable = false,
-		diggable = false,
-		light_source = 13,
-		groups = {not_in_creative_inventory=1}
-	})
+    if color ~= "blank" then
+        minetest.register_node("simple_waypoints:"..color.."_beacon", {
+            visual_scale = 1.0,
+            drawtype = "plantlike",
+            tiles = {"beacon_"..color..".png"},
+            paramtype = "light",
+            walkable = false,
+            diggable = false,
+            light_source = 13,
+            groups = {not_in_creative_inventory=1}
+        })
+    end
 end
 
 -- BEACON FUNCTIONS
@@ -110,10 +112,10 @@ local function placeBeacon(pos, color)
 	for i=0,50 do
 		local target_node = minetest.get_node({x=pos.x, y=pos.y+i, z=pos.z})
 		if target_node.name == "air" then
-			if color == nil then
-				minetest.add_node({x=pos.x, y=pos.y+i, z=pos.z},
-				{name="simple_waypoints:"..palette[random].."_beacon"})
-			else
+			if color ~= "blank" then
+--				minetest.add_node({x=pos.x, y=pos.y+i, z=pos.z},
+--				{name="simple_waypoints:"..palette[random].."_beacon"})
+--			else
 				minetest.add_node({x=pos.x, y=pos.y+i, z=pos.z},
 				{name="simple_waypoints:"..color.."_beacon"})
 			end
@@ -123,12 +125,14 @@ end
 
 local function removeBeacon(pos)
 	for _,v in ipairs(palette) do
-		for i=0,50 do
-			local target_node = minetest.get_node({x=pos.x, y=pos.y+i, z=pos.z})
-			if target_node.name == "simple_waypoints:"..v.."_beacon" then
-				minetest.add_node({x=pos.x, y=pos.y+i, z=pos.z}, {name="air"})
-			end
-		end
+        if v ~= nil then
+            for i=0,50 do
+                local target_node = minetest.get_node({x=pos.x, y=pos.y+i, z=pos.z})
+                if target_node.name == "simple_waypoints:"..v.."_beacon" then
+                    minetest.add_node({x=pos.x, y=pos.y+i, z=pos.z}, {name="air"})
+                end
+            end
+        end
 	end
 end
 
@@ -149,7 +153,7 @@ minetest.register_chatcommand("wc", {
 			waypoints[#waypoints+1] = { name = params,
 			pos = minetest.pos_to_string(round_pos) }
 			addWaypointHud(waypoints, player)
-			placeBeacon(round_pos)
+--			placeBeacon(round_pos)
 			save()
 		return true, "Waypoint "..params.." created!"
 		else return true, invalidInput
@@ -196,7 +200,7 @@ minetest.register_chatcommand("wl", {
 minetest.register_chatcommand("wt", {
 	params = "<waypoint_name>",
 	description = "Teleports you to a specified waypoint.",
-	privs = {shout = true},
+	privs = {teleport = true},
 	func = function(name, params)
 		local player = minetest.get_player_by_name(name)
 		local p_name = player:get_player_name()
@@ -212,6 +216,7 @@ minetest.register_chatcommand("wt", {
 
 -- SHOW WAYPOINTS FORMSPEC
 minetest.register_chatcommand("wf", {
+	privs = {teleport = true},
 	func = function(name)
 		minetest.show_formspec(name, "simple_waypoints:waypoints_formspec", waypoints_formspec.get_main())
 	end,
@@ -244,7 +249,7 @@ local f = ""
 end
 
 function waypoints_formspec.get_add()
-	local text = "Add waypoint at current position. Random color if unselected."
+	local text = "Add waypoint at current position."
 	local text2 = "Color:"
 	formspec = {
 		"size[10,5]",
@@ -252,7 +257,7 @@ function waypoints_formspec.get_add()
 		"label[0.375,0.5;", text, "]",
 		"label[5.375,1.80;", text2, "]",
 		"field[0.375,2;4,0.6;name;Name:;]",
-		"dropdown[5.375,2;4,0.6;color;blue,green,orange,pink,purple,red,white,yellow;0]",
+		"dropdown[5.375,2;4,0.6;color;Blank,Blue,Green,Orange,Pink,Purple,Red,White,Yellow;1]",
 		"button[4,3.5;2,1;create;Create]"
 	}
 	return table.concat(formspec, " ")
@@ -292,10 +297,14 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			selected_idx = event.index
 		end
 	elseif fields.teleport then
+		if not minetest.check_player_privs(pname, {teleport = true}) then
+			minetest.chat_send_player(pname, "You do not have teleport privilege.")
+			return
+		end
 		if waypoints[selected_idx] ~= nil then
 			player:set_pos(minetest.string_to_pos(waypoints[selected_idx].pos))
 			minetest.chat_send_all(pname .. " Teleported to " .. waypoints[selected_idx].name)
-			selected_idx = nil   -- "Teleport" button remembers the last location when you don't select a valid item. This is a reset.
+			selected_idx = blank   -- "Teleport" button remembers the last location when you don't select a valid item. This is a reset.
 		end
 	elseif fields.add then
 		minetest.show_formspec(pname, "simple_waypoints:waypoints_formspec", waypoints_formspec.get_add())
@@ -307,7 +316,9 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 			if not waypointExists(waypoints, fields.name) then
 				waypoints[#waypoints+1] = { name = fields.name, pos = minetest.pos_to_string(round_pos) }
 				addWaypointHud(waypoints, player)
-				placeBeacon(round_pos, fields.color)
+                if fields.color ~= "Blank" then
+                    placeBeacon(round_pos, string.lower(fields.color))
+                end
 				save()
 				minetest.show_formspec(pname, "simple_waypoints:waypoints_formspec", waypoints_formspec.get_main())
 			else minetest.show_formspec(pname, "simple_waypoints:waypoints_formspec", waypoints_formspec.get_exists())
